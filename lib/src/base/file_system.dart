@@ -5,7 +5,6 @@
 import 'package:file/file.dart';
 import 'package:file/local.dart';
 import 'package:file/memory.dart';
-import 'package:file/record_replay.dart';
 import 'package:meta/meta.dart';
 
 import 'common.dart' show throwToolExit;
@@ -25,33 +24,6 @@ const FileSystem _kLocalFs = LocalFileSystem();
 /// with [MemoryFileSystem].
 FileSystem get fs => context.get<FileSystem>() ?? _kLocalFs;
 
-/// Gets a [FileSystem] that will record file system activity to the specified
-/// base recording [location].
-///
-/// Activity will be recorded in a subdirectory of [location] named `"file"`.
-/// It is permissible for [location] to represent an existing non-empty
-/// directory as long as there is no collision with the `"file"` subdirectory.
-RecordingFileSystem getRecordingFileSystem(String location) {
-  final Directory dir = getRecordingSink(location, _kRecordingType);
-  final RecordingFileSystem fileSystem = RecordingFileSystem(
-      delegate: _kLocalFs, destination: dir);
-  addShutdownHook(() async {
-    await fileSystem.recording.flush();
-  }, ShutdownStage.SERIALIZE_RECORDING);
-  return fileSystem;
-}
-
-/// Gets a [FileSystem] that replays invocation activity from a previously
-/// recorded set of invocations.
-///
-/// [location] must represent a directory to which file system activity has
-/// been recorded (i.e. the result of having been previously passed to
-/// [getRecordingFileSystem]), or a [ToolExit] will be thrown.
-ReplayFileSystem getReplayFileSystem(String location) {
-  final Directory dir = getReplaySource(location, _kRecordingType);
-  return ReplayFileSystem(recording: dir);
-}
-
 /// Create the ancestor directories of a file path if they do not already exist.
 void ensureDirectoryExists(String filePath) {
   final String dirPath = fs.path.dirname(filePath);
@@ -60,7 +32,7 @@ void ensureDirectoryExists(String filePath) {
   try {
     fs.directory(dirPath).createSync(recursive: true);
   } on FileSystemException catch (e) {
-    throwToolExit('Failed to create directory "$dirPath": ${e.osError.message}');
+    throwToolExit('Failed to create directory "$dirPath": ${e.osError!.message}');
   }
 }
 
@@ -68,7 +40,7 @@ void ensureDirectoryExists(String filePath) {
 /// specified for each source/destination file pair.
 ///
 /// Creates `destDir` if needed.
-void copyDirectorySync(Directory srcDir, Directory destDir, [ void onFileCopied(File srcFile, File destFile) ]) {
+void copyDirectorySync(Directory srcDir, Directory destDir, [ void onFileCopied(File srcFile, File destFile)? ]) {
   if (!srcDir.existsSync())
     throw Exception('Source directory "${srcDir.path}" does not exist, nothing to copy');
 
@@ -83,7 +55,7 @@ void copyDirectorySync(Directory srcDir, Directory destDir, [ void onFileCopied(
       onFileCopied?.call(entity, newFile);
     } else if (entity is Directory) {
       copyDirectorySync(
-        entity, destDir.fileSystem.directory(newPath));
+          entity, destDir.fileSystem.directory(newPath));
     } else {
       throw Exception('${entity.path} is neither File nor Directory');
     }
@@ -151,7 +123,7 @@ String escapePath(String path) => platform.isWindows ? path.replaceAll('\\', '\\
 /// Returns true, if [entity] does not exist.
 ///
 /// Returns false, if [entity] exists, but [referenceFile] does not.
-bool isOlderThanReference({ @required FileSystemEntity entity, @required File referenceFile }) {
+bool isOlderThanReference({ required FileSystemEntity entity, required File referenceFile }) {
   if (!entity.existsSync())
     return true;
   return referenceFile.existsSync()
